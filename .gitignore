@@ -15,3 +15,19 @@ venv/
 
 # OS
 .DS_Store
+
+# Local indexes/runtime state
+.faiss_store/
+.memory/
+
+# AI assistant / tooling artifacts
+.codex/
+.claude/
+.cursor/
+.windsurf/
+.aider*
+.llm/
+.openai/
+*.promptlog
+*.chatlog
+*.aichat
