@@ -1,0 +1,17 @@
+# Environment & secrets
+.env
+
+# PDFs (do not commit — list titles in README instead)
+docs/*.pdf
+
+# ChromaDB vector store (auto-generated)
+.chroma_store/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# OS
+.DS_Store
