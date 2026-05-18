@@ -47,7 +47,4 @@ A Streamlit-based RAG chatbot for Verite Research publications.
 
 - `GROQ_API_KEY`: required
 
-## Notes
 
-- Retrieval is FAISS + BM25 (hybrid), not ChromaDB.
-- Upload-from-UI is currently removed for assignment submission flow.
