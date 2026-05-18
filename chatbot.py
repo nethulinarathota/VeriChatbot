@@ -338,9 +338,18 @@ class VeriteChatbot:
                 start += size - overlap
         return out
 
+    def _is_summary_query(self, text: str) -> bool:
+        t = (text or "").lower()
+        summary_terms = (
+            "summary", "summarize", "summarise", "overview",
+            "key findings", "main findings", "highlights",
+            "this document", "this paper", "selected document",
+        )
+        return any(term in t for term in summary_terms)
+
     # ── Hybrid retrieve ───────────────────────────────────────────────────────
 
-    def _retrieve(self, query, filter_title=None):
+    def _retrieve(self, query, filter_title=None, user_input=None):
         if not self.chunks or self.index is None:
             return []
 
@@ -364,11 +373,22 @@ class VeriteChatbot:
             rrf[i] += (1 - HYBRID_ALPHA) / (60 + rank + 1)
 
         sorted_ids = sorted(rrf.keys(), key=lambda i: rrf[i], reverse=True)
+        is_summary = self._is_summary_query(user_input or query)
 
         if filter_title:
             sorted_ids = [i for i in sorted_ids if self.metadata[i].get("source_title") == filter_title]
 
-        sorted_ids = [i for i in sorted_ids if vec_s.get(i, 0) >= SIM_THRESHOLD]
+        threshold_ids = [i for i in sorted_ids if vec_s.get(i, 0) >= SIM_THRESHOLD]
+        # If a publication filter is explicitly selected, avoid hard-failing on strict
+        # similarity thresholds for broad prompts like "summarize this paper".
+        if threshold_ids:
+            sorted_ids = threshold_ids
+        elif filter_title:
+            sorted_ids = sorted_ids[: max(FINAL_K * 2, 8)]
+        elif is_summary:
+            sorted_ids = sorted_ids[: max(FINAL_K * 2, 8)]
+        else:
+            sorted_ids = []
 
         seen, results = set(), []
         for i in sorted_ids:
@@ -384,6 +404,8 @@ class VeriteChatbot:
                 "page_number":  m["page_number"],
                 "source_url":   m.get("source_url", ""),
                 "score":        vec_s.get(i, 0),
+                "bm25_score":   bm25_norm.get(i, 0),
+                "hybrid_rank":  rrf.get(i, 0),
             })
             if len(results) >= FINAL_K:
                 break
@@ -392,24 +414,28 @@ class VeriteChatbot:
 
     # ── Query rewrite ─────────────────────────────────────────────────────────
 
-    def _rewrite(self, user_input, history):
+    def _rewrite(self, user_input, history, filter_title=None):
         if not history:
-            return user_input
-        hist_str = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in history[-4:])
-        prompt = f"""Rewrite the follow-up as a standalone search query. Return ONLY the query.
+            q = user_input
+        else:
+            hist_str = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in history[-4:])
+            prompt = f"""Rewrite the follow-up as a standalone search query. Return ONLY the query.
 
 History:
 {hist_str}
 
 Follow-up: {user_input}
 Standalone query:"""
-        r = self.groq.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=80, temperature=0
-        )
-        q = r.choices[0].message.content.strip()
-        return q if q else user_input
+            r = self.groq.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=80, temperature=0
+            )
+            q = r.choices[0].message.content.strip() or user_input
+
+        if filter_title and self._is_summary_query(user_input):
+            return f"{q} {filter_title} detailed summary key findings"
+        return q
 
     # ── Classify ──────────────────────────────────────────────────────────────
 
@@ -482,6 +508,10 @@ JSON:"""
     def chat(self, user_input, history, session_id="default", filter_title=None):
         self.memory.save_message(session_id, "user", user_input)
         category = self._classify(user_input)
+        # Guardrail: summary-style prompts should always route into retrieval.
+        # Keep true off-topic declines active even when a publication filter is selected.
+        if self._is_summary_query(user_input):
+            category = "verite"
 
         if category == "greeting":
             prompt = f"""You are Veri, a friendly assistant for Verite Research. Respond warmly and briefly to this greeting. Mention you can help with their publications on Sri Lanka's budget, anti-corruption laws, and youth employment.
@@ -502,8 +532,8 @@ User: {user_input}"""
             return {"response": resp, "citation": None, "suggestions": [],
                     "faithful": True, "score": 1.0, "rewritten_query": user_input}
 
-        rewritten = self._rewrite(user_input, history)
-        chunks    = self._retrieve(rewritten, filter_title=filter_title)
+        rewritten = self._rewrite(user_input, history, filter_title=filter_title)
+        chunks    = self._retrieve(rewritten, filter_title=filter_title, user_input=user_input)
 
         if not chunks:
             resp = ("I couldn't find relevant information in the indexed publications. "
@@ -544,6 +574,9 @@ Rules:
         suggestions = self._suggest(user_input, answer)
 
         top      = chunks[0]
+        agg_vec  = float(np.mean([c["score"] for c in chunks[: min(3, len(chunks))]]))
+        agg_bm25 = float(np.mean([c.get("bm25_score", 0.0) for c in chunks[: min(3, len(chunks))]]))
+        ui_score = max(0.0, min(1.0, (0.7 * agg_vec) + (0.3 * agg_bm25)))
         citation = f"{top['source_title']} ({top['source_year']}) — p.{top['page_number']}"
         self.memory.save_message(session_id, "assistant", answer, citation)
 
@@ -552,7 +585,8 @@ Rules:
             "citation":        citation,
             "suggestions":     suggestions,
             "faithful":        faithful,
-            "score":           top["score"],
+            "score":           ui_score,
+            "source_excerpt":  top["text"],
             "rewritten_query": rewritten,
         }
 
