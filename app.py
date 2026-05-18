@@ -4,6 +4,7 @@ Run with: streamlit run app.py
 """
 
 import io
+import os
 import uuid
 import base64
 import requests
@@ -11,10 +12,13 @@ import streamlit as st
 from PIL import Image
 from chatbot import VeriteChatbot
 
+VERITE_LOGO_PATH = "Logos/Verite logo.png"
+SEARCH_ICON_PATH = "Logos/search.png"
+
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Veri — Verite Research",
-    page_icon="📚",
+    page_icon=Image.open(VERITE_LOGO_PATH),
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -22,6 +26,10 @@ st.set_page_config(
 # ── Logo / icon loaders ───────────────────────────────────────────────────────
 COMMIT = "da12781eb151c723490f62acff1b76f218683600"
 RAW    = f"https://raw.githubusercontent.com/nethulinarathota/veriteresearch101/{COMMIT}"
+
+# Commit for the new logos (book, stack, shield, search, document, warning)
+COMMIT2 = "1b442727a7a1ace5a05705bc3fe54601df5df8eb"
+RAW2    = f"https://raw.githubusercontent.com/nethulinarathota/veriteresearch101/{COMMIT2}"
 
 @st.cache_data(show_spinner=False)
 def _fetch_b64(url: str) -> str | None:
@@ -33,119 +41,107 @@ def _fetch_b64(url: str) -> str | None:
     except Exception:
         return None
 
-
 @st.cache_data(show_spinner=False)
 def _fetch_inverted_b64(url: str) -> str | None:
     """
-    Fetch black PNG and convert black → white
-    while keeping transparency.
+    Fetch a black-on-transparent PNG and invert it to white-on-transparent,
+    then return as base64.  Falls back to None on any error.
     """
     try:
         resp = requests.get(url, timeout=5)
         resp.raise_for_status()
-
         img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
-
         r, g, b, a = img.split()
-
-        inverted = Image.merge(
-            "RGBA",
-            (
-                r.point(lambda x: 255 - x),
-                g.point(lambda x: 255 - x),
-                b.point(lambda x: 255 - x),
-                a
-            )
-        )
-
+        # Invert only the RGB channels; leave alpha intact
+        inv = Image.merge("RGBA", (
+            r.point(lambda x: 255 - x),
+            g.point(lambda x: 255 - x),
+            b.point(lambda x: 255 - x),
+            a,
+        ))
         buf = io.BytesIO()
-        inverted.save(buf, format="PNG")
-
+        inv.save(buf, format="PNG")
         return base64.b64encode(buf.getvalue()).decode()
-
     except Exception:
         return None
 
+@st.cache_data(show_spinner=False)
+def _local_b64(path: str) -> str | None:
+    try:
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    except Exception:
+        return None
 
-# ── Main Verité logo ──────────────────────────────────────────────────────────
-# This uses your provided Verite logo
+@st.cache_data(show_spinner=False)
+def _local_inverted_b64(path: str) -> str | None:
+    try:
+        img = Image.open(path).convert("RGBA")
+        r, g, b, a = img.split()
+        inv = Image.merge("RGBA", (
+            r.point(lambda x: 255 - x),
+            g.point(lambda x: 255 - x),
+            b.point(lambda x: 255 - x),
+            a,
+        ))
+        buf = io.BytesIO()
+        inv.save(buf, format="PNG")
+        return base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        return None
 
-logo_b64 = _fetch_b64(
-    f"{RAW}/Logos/Verite%20logo.png"
-)
+# Load Verite logo (used as nav/sidebar/orb image and favicon source)
+logo_b64 = _local_b64(VERITE_LOGO_PATH)
 
+icon_corruption_b64 = _fetch_inverted_b64(f"{RAW}/Logos/anti-corruption.png")
+icon_budget_b64     = _fetch_inverted_b64(f"{RAW}/Logos/calculator.png")
+icon_employee_b64   = _fetch_inverted_b64(f"{RAW}/Logos/employee.png")
 
-# ── Card icons (black → white automatically) ────────────────────────────────
+# Load stat icons — same inversion (black outlines → white)
+icon_book_b64    = _fetch_inverted_b64(f"{RAW2}/Logos/book.png")
+icon_stack_b64   = _fetch_inverted_b64(f"{RAW2}/Logos/stack.png")
+icon_shield_b64  = _fetch_inverted_b64(f"{RAW2}/Logos/shield.png")
 
-icon_corruption_b64 = _fetch_inverted_b64(
-    f"{RAW}/Logos/anti-corruption.png"
-)
-
-icon_budget_b64 = _fetch_inverted_b64(
-    f"{RAW}/Logos/calculator.png"
-)
-
-icon_employee_b64 = _fetch_inverted_b64(
-    f"{RAW}/Logos/employee.png"
-)
-
+# Load inline icons — same inversion
+icon_search_b64   = _local_inverted_b64(SEARCH_ICON_PATH) or _fetch_inverted_b64(f"{RAW2}/Logos/search.png")
+icon_document_b64 = _fetch_inverted_b64(f"{RAW2}/Logos/document.png")
+icon_warning_b64  = _fetch_inverted_b64(f"{RAW2}/Logos/warning.png")
 
 def _img_tag(b64: str | None, style: str, fallback: str = "") -> str:
     if b64:
-        return f'''
-            <img
-                src="data:image/png;base64,{b64}"
-                style="{style}"
-            />
-        '''
-    return f"<span>{fallback}</span>"
-
-
-# ── Navbar / Sidebar / Orb logos ─────────────────────────────────────────────
+        return f'<img src="data:image/png;base64,{b64}" style="{style}" />'
+    return f'<span>{fallback}</span>'
 
 logo_img = _img_tag(
     logo_b64,
     "width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;",
     '<div class="lp-nav-mark">V</div>',
 )
-
 logo_sidebar = _img_tag(
     logo_b64,
     "width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0;",
     '<div class="veri-logo-mark">V</div>',
 )
-
 logo_orb = _img_tag(
     logo_b64,
     "width:84px;height:84px;border-radius:50%;object-fit:cover;",
     "📚",
 )
 
-
-# ── Card icons replacing emojis ─────────────────────────────────────────────
-
-icon_corruption = _img_tag(
-    icon_corruption_b64,
-    "width:22px;height:22px;object-fit:contain;",
-    "🛡️"
-)
-
-icon_budget = _img_tag(
-    icon_budget_b64,
-    "width:22px;height:22px;object-fit:contain;",
-    "📊"
-)
-
-icon_employee = _img_tag(
-    icon_employee_b64,
-    "width:22px;height:22px;object-fit:contain;",
-    "👥"
-)
-
 # Card icon helpers — white, no border-radius so the icon shape shows cleanly
 icon_corruption = _img_tag(icon_corruption_b64, "width:22px;height:22px;object-fit:contain;", "🛡️")
 icon_budget     = _img_tag(icon_budget_b64,     "width:22px;height:22px;object-fit:contain;", "📊")
 icon_employee   = _img_tag(icon_employee_b64,   "width:22px;height:22px;object-fit:contain;", "👥")
+
+# Stat icons — sit beside the number in the stats strip
+icon_book   = _img_tag(icon_book_b64,   "width:22px;height:22px;object-fit:contain;vertical-align:middle;margin-right:6px;", "📚")
+icon_stack  = _img_tag(icon_stack_b64,  "width:22px;height:22px;object-fit:contain;vertical-align:middle;margin-right:6px;", "📦")
+icon_shield = _img_tag(icon_shield_b64, "width:22px;height:22px;object-fit:contain;vertical-align:middle;margin-right:6px;", "🛡️")
+
+# Inline icons for chat message extras
+icon_search_inline   = _img_tag(icon_search_b64,   "width:13px;height:13px;object-fit:contain;vertical-align:middle;margin-right:4px;", "🔍")
+icon_document_inline = _img_tag(icon_document_b64, "width:13px;height:13px;object-fit:contain;vertical-align:middle;margin-right:4px;", "📄")
+icon_warning_inline  = _img_tag(icon_warning_b64,  "width:13px;height:13px;object-fit:contain;vertical-align:middle;margin-right:4px;", "⚠️")
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -250,6 +246,18 @@ html, body, [class*="css"] {
     border-radius: 12px; margin-top: 6px;
 }
 
+/* ── Source excerpt ── */
+.source-excerpt {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border: 1px solid rgba(245,245,240,0.12);
+    background: rgba(245,245,240,0.03);
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: rgba(245,245,240,0.78);
+}
+
 /* ── Score bar ── */
 .score-bar-wrap { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 .score-bar-bg   { flex: 1; height: 3px; background: rgba(245,245,240,0.08); border-radius: 2px; max-width: 100px; }
@@ -335,6 +343,7 @@ hr { border-color: rgba(245,245,240,0.07) !important; }
 .rewrite-pill {
     font-size: 11px; color: rgba(245,245,240,0.28);
     margin-bottom: 4px; font-style: italic;
+    display: flex; align-items: center; gap: 4px;
 }
 
 /* ── Export link ── */
@@ -385,7 +394,7 @@ hr { border-color: rgba(245,245,240,0.07) !important; }
 
 .lp-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: rgba(245,245,240,0.06); border-top: 0.5px solid rgba(245,245,240,0.06); }
 .lp-stat { background: #1C1F1D; padding: 24px 28px; }
-.lp-stat-num { font-size: 28px; font-weight: 600; color: #F5F5F0; margin-bottom: 3px; }
+.lp-stat-num { font-size: 28px; font-weight: 600; color: #F5F5F0; margin-bottom: 3px; display: flex; align-items: center; gap: 4px; }
 .lp-stat-num span { color: #8B1E1A; }
 .lp-stat-label { font-size: 11px; color: rgba(245,245,240,0.32); letter-spacing: 0.04em; }
 
@@ -404,17 +413,29 @@ hr { border-color: rgba(245,245,240,0.07) !important; }
 .lp-cards a { display: contents; }
 
 .lp-main-cta { display: none; }
+
+/* ── Start asking button icon ── */
+.start-asking-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    background: #8B1E1A; color: #F5F5F0;
+    border: none; border-radius: 8px;
+    padding: 10px 22px; font-size: 13px; font-weight: 500;
+    cursor: pointer; transition: background 0.2s, transform 0.15s;
+    width: 100%;
+}
+.start-asking-btn:hover { background: #6B1614; transform: translateY(-2px); }
 </style>
 """, unsafe_allow_html=True)
 
 # ── Init chatbot ──────────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner="Loading knowledge base…")
-def load_bot():
+def load_bot(_bot_version: float):
     bot = VeriteChatbot()
     bot.build_knowledge_base()
     return bot
 
-bot = load_bot()
+BOT_VERSION = os.path.getmtime("chatbot.py")
+bot = load_bot(BOT_VERSION)
 
 # ── Session state ─────────────────────────────────────────────────────────────
 if "messages"   not in st.session_state:
@@ -428,6 +449,22 @@ if "page"       not in st.session_state:
 
 chunk_count = bot.get_chunk_count()
 pub_list    = bot.get_publication_list()
+
+if "selected_publication" not in st.session_state:
+    st.session_state.selected_publication = "All publications"
+if "last_selected_publication" not in st.session_state:
+    st.session_state.last_selected_publication = st.session_state.selected_publication
+
+def _set_selected_publication(match_terms: list[str]) -> None:
+    for title in pub_list:
+        low = title.lower()
+        if all(term in low for term in match_terms):
+            st.session_state.selected_publication = title
+            st.session_state.last_selected_publication = title
+            return
+    st.session_state.selected_publication = "All publications"
+    st.session_state.last_selected_publication = "All publications"
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LANDING PAGE
@@ -486,15 +523,15 @@ if st.session_state.page == "home":
       <!-- Stats -->
       <div class="lp-stats">
         <div class="lp-stat">
-          <div class="lp-stat-num">{len(pub_list)}<span>+</span></div>
+          <div class="lp-stat-num">{icon_book}{len(pub_list)}<span>+</span></div>
           <div class="lp-stat-label">Publications indexed</div>
         </div>
         <div class="lp-stat">
-          <div class="lp-stat-num">{chunk_count}<span>+</span></div>
+          <div class="lp-stat-num">{icon_stack}{chunk_count}<span>+</span></div>
           <div class="lp-stat-label">Knowledge chunks</div>
         </div>
         <div class="lp-stat">
-          <div class="lp-stat-num">0<span>ms</span></div>
+          <div class="lp-stat-num">{icon_shield}0<span>ms</span></div>
           <div class="lp-stat-label">Hallucinations (by design)</div>
         </div>
       </div>
@@ -537,22 +574,55 @@ if st.session_state.page == "home":
     st.markdown("<div style='height:1px;background:rgba(245,245,240,0.06);'></div>", unsafe_allow_html=True)
     col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
     with col1:
-        if st.button("🔍  Start asking →", use_container_width=True, key="lp_start"):
+        clicked = st.button(
+            "Start asking ->",
+            key="lp_start",
+            use_container_width=True,
+        )
+        st.markdown(
+            f"""
+            <style>
+            div[data-testid="column"]:first-child .stButton > button {{
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                gap: 7px !important;
+            }}
+            div[data-testid="column"]:first-child .stButton > button::before {{
+                content: "";
+                width: 15px;
+                height: 15px;
+                display: inline-block;
+                background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>");
+                background-size: contain;
+                background-repeat: no-repeat;
+                background-position: center;
+            }}
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+        if clicked:
+            if st.session_state.last_selected_publication in (["All publications"] + pub_list):
+                st.session_state.selected_publication = st.session_state.last_selected_publication
             st.session_state.page = "chat"
             st.rerun()
     with col2:
         if st.button("Anti-corruption", use_container_width=True, key="lp_card1"):
             st.session_state.prefill = "What gaps does Verite identify in Sri Lanka's anti-corruption laws?"
+            _set_selected_publication(["gaps", "guardrails"])
             st.session_state.page = "chat"
             st.rerun()
     with col3:
         if st.button("Budget 2026", use_container_width=True, key="lp_card2"):
             st.session_state.prefill = "What does the State of the Budget 2026 say about government revenue?"
+            _set_selected_publication(["budget", "2026"])
             st.session_state.page = "chat"
             st.rerun()
     with col4:
         if st.button("Youth employment", use_container_width=True, key="lp_card3"):
             st.session_state.prefill = "What job search methods work best for unemployed youth in Sri Lanka?"
+            _set_selected_publication(["social", "contacts", "youth"])
             st.session_state.page = "chat"
             st.rerun()
 
@@ -580,33 +650,18 @@ else:
         st.markdown("---")
 
         st.markdown("### Filter by publication")
-        filter_opt   = ["All publications"] + pub_list
-        selected     = st.selectbox("Search within", filter_opt, label_visibility="collapsed")
+        filter_opt = ["All publications"] + pub_list
+        if st.session_state.selected_publication not in filter_opt:
+            st.session_state.selected_publication = "All publications"
+        selected = st.selectbox(
+            "Search within",
+            filter_opt,
+            index=filter_opt.index(st.session_state.selected_publication),
+            key="selected_publication",
+            label_visibility="collapsed",
+        )
+        st.session_state.last_selected_publication = selected
         filter_title = None if selected == "All publications" else selected
-
-        st.markdown("---")
-
-        # Upload paper
-        st.markdown("### Add a publication")
-        uploaded = st.file_uploader("Upload a PDF", type="pdf", label_visibility="collapsed")
-        if uploaded:
-            col1, col2 = st.columns(2)
-            with col1:
-                new_title = st.text_input("Title", placeholder="Paper title")
-            with col2:
-                new_year  = st.text_input("Year",  placeholder="2025")
-            new_url = st.text_input("URL (optional)", placeholder="https://...")
-            if st.button("Add to knowledge base", use_container_width=True):
-                if new_title and new_year:
-                    bot.add_paper_async(
-                        uploaded.read(), new_title.strip(), new_year.strip(), new_url.strip()
-                    )
-                    st.success(f"Indexing started! '{new_title}' will be ready in a moment.")
-                else:
-                    st.warning("Please enter a title and year.")
-
-        if bot.is_building():
-            st.markdown(f'<div class="building-pill">⟳ {bot.build_progress()}</div>', unsafe_allow_html=True)
 
         st.markdown("---")
 
@@ -680,26 +735,30 @@ else:
             citation    = msg.get("citation")
             faithful    = msg.get("faithful", True)
             score       = msg.get("score", 0)
+            source_excerpt = msg.get("source_excerpt", "")
             rewritten   = msg.get("rewritten_query", "")
             suggestions = msg.get("suggestions", [])
 
             if rewritten and rewritten != msg.get("original_query", rewritten):
                 st.markdown(
-                    f'<div class="rewrite-pill">🔍 Interpreted as: "{rewritten}"</div>',
+                    f'<div class="rewrite-pill">{icon_search_inline} Interpreted as: "{rewritten}"</div>',
                     unsafe_allow_html=True
                 )
 
             extras = ""
             if citation:
-                extras += f'<div class="citation-tag">📄 {citation}</div>'
+                extras += f'<div class="citation-tag">{icon_document_inline} {citation}</div>'
             if not faithful:
-                extras += f'<div class="faith-warn">⚠️ Parts may go beyond source documents</div>'
+                extras += f'<div class="faith-warn">{icon_warning_inline} Parts may go beyond source documents</div>'
             if score and score < 1.0:
                 pct = int(score * 100)
                 extras += f'''<div class="score-bar-wrap">
                   <div class="score-bar-bg"><div class="score-bar-fill" style="width:{pct}%"></div></div>
                   <span class="score-label">relevance {pct}%</span>
                 </div>'''
+            if source_excerpt:
+                excerpt = source_excerpt[:600] + ("..." if len(source_excerpt) > 600 else "")
+                extras += f'<div class="source-excerpt"><strong>Source excerpt:</strong><br>{excerpt}</div>'
 
             st.markdown(f'<div class="chat-bot">{content}{extras}</div>', unsafe_allow_html=True)
 
@@ -744,9 +803,12 @@ else:
             "citation":         result["citation"],
             "faithful":         result["faithful"],
             "score":            result["score"],
+            "source_excerpt":   result.get("source_excerpt", ""),
             "rewritten_query":  result["rewritten_query"],
             "original_query":   query,
             "suggestions":      result["suggestions"],
         })
 
         st.rerun()
+
+

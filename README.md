@@ -1,157 +1,53 @@
-# Veri — Verite Research Chatbot
+# Veri - Verite Research Chatbot
 
-A RAG-based AI chatbot that answers questions about Verite Research publications, built with Python, Streamlit, ChromaDB, and the Groq API.
+A Streamlit-based RAG chatbot for Verite Research publications.
 
----
+## What It Does
 
-## How It Works
-
-```
-User question
-     │
-     ▼
-┌─────────────────────┐
-│  Message Classifier  │  (Groq LLM, temp=0)
-│  greeting / verite / │
-│  off_topic           │
-└─────────────────────┘
-     │
-     ├── greeting  → Friendly response, no DB search
-     ├── off_topic → Polite decline
-     └── verite    ──────────────────────────────────┐
-                                                     ▼
-                                         ┌─────────────────────┐
-                                         │  Embed user query   │
-                                         │  (all-MiniLM-L6-v2) │
-                                         └─────────────────────┘
-                                                     │
-                                                     ▼
-                                         ┌─────────────────────┐
-                                         │  ChromaDB vector    │
-                                         │  similarity search  │
-                                         │  → top 4 chunks     │
-                                         └─────────────────────┘
-                                                     │
-                                                     ▼
-                                         ┌─────────────────────┐
-                                         │  Groq LLM (llama-   │
-                                         │  3.3-70b-versatile) │
-                                         │  + conversation     │
-                                         │  history            │
-                                         └─────────────────────┘
-                                                     │
-                                                     ▼
-                                         Answer + Citation tag
-```
-
----
-
-## Project Structure
-
-```
-verite-chatbot/
-├── app.py          # Streamlit UI
-├── chatbot.py      # RAG pipeline (PDF loading, ChromaDB, Groq)
-├── PROMPTS.md      # Prompt engineering decisions
-├── requirements.txt
-├── .env.example
-├── docs/           # Place your 3 Verite PDFs here (not committed)
-│   ├── verite_forced_labour_recruitment.pdf
-│   ├── verite_audit_failures.pdf
-│   └── verite_responsible_sourcing.pdf
-└── .chroma_store/  # Auto-created by ChromaDB (not committed)
-```
-
----
+- Loads 3 Verite PDFs from `docs/`
+- Extracts text with `pypdf`
+- Chunks into parent/child segments
+- Embeds with `all-MiniLM-L6-v2`
+- Retrieves with hybrid search (FAISS + BM25 RRF)
+- Answers using Groq `llama-3.3-70b-versatile`
+- Maintains in-session conversation history
+- Stores long-term memory in SQLite
+- Shows citation with publication + year + page
 
 ## Setup
 
-### 1. Clone the repo
-
-```bash
-git clone https://github.com/YOUR_USERNAME/verite-chatbot.git
-cd verite-chatbot
-```
-
-### 2. Create a virtual environment
-
-```bash
-python -m venv venv
-source venv/bin/activate        # Mac/Linux
-venv\Scripts\activate           # Windows
-```
-
-### 3. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Set your API key
-
-```bash
-cp .env.example .env
-# Open .env and paste your Groq API key
-```
-
-### 5. Add the PDFs
-
-Download the 3 publications from [Verite Research](https://www.veriteresearch.org/services-and-products/research-outputs/) and place them in the `docs/` folder with these exact filenames:
-
-```
-docs/verite_forced_labour_recruitment.pdf
-docs/verite_audit_failures.pdf
-docs/verite_responsible_sourcing.pdf
-```
-
-> Update `PUBLICATIONS` in `chatbot.py` if you choose different publications.
-
-### 6. Run the app
-
-```bash
-streamlit run app.py
-```
-
-Open [http://localhost:8501](http://localhost:8501) in your browser.
-
----
+1. Create and activate venv
+2. Install deps: `pip install -r requirements.txt`
+3. Create `.env` from `.env.example` and set `GROQ_API_KEY`
+4. Place PDFs in `docs/` as:
+   - `paper1.pdf`
+   - `paper2.pdf`
+   - `paper3.pdf`
+5. Run: `streamlit run app.py`
 
 ## Publications Used
 
 | Title | Year | URL |
 |---|---|---|
-| Gaps in the Guardrails: A Review of Laws on Private Sector Corruption in Sri Lanka | 2025 | https://www.veriteresearch.org/wp-content/uploads/2025/02/11022025_Gaps_in_the_Guardrails... |
+| Gaps in the Guardrails: A Review of Laws on Private Sector Corruption in Sri Lanka | 2025 | https://www.veriteresearch.org/wp-content/uploads/2025/02/11022025_Gaps_in_the_Guardrails_A_Review_of_Laws_on_Private_Sector_Corruption_in_Sri_Lanka.pdf |
 | State of the Budget 2026 | 2026 | https://www.veriteresearch.org/wp-content/uploads/2026/02/20260217_VeriteResearch_StateOfTheBudget2026.pdf |
-| Ineffectiveness of Social Contacts and Alternate Job Search Methods for Unemployed Youth in Sri Lanka | 2020 | https://www.veriteresearch.org/wp-content/uploads/2024/05/VR-Working-Paper_The-Inefficiency-of-Social-Contacts... |
+| Ineffectiveness of Social Contacts and Alternate Job Search Methods for Unemployed Youth in Sri Lanka | 2020 | https://www.veriteresearch.org/wp-content/uploads/2024/05/VR-Working-Paper_The-Inefficiency-of-Social-Contacts-for-Unemployed-Youth-Working-Paper_June-2020-01.pdf |
 
----
+## Sample Questions and Answers
 
-## Sample Questions
-
-| Question | What happens |
+| Question | Chatbot answer (example) |
 |---|---|
-| "Hi!" | Veri greets you and introduces herself |
-| "What gaps exist in Sri Lanka's anti-corruption laws?" | RAG answer with citation |
-| "Can you say more about that?" | Follow-up using conversation history |
-| "What does the 2026 budget say about revenue?" | RAG answer with citation |
-| "Who is Virat Kohli?" | Politely declined |
-
----
+| Hi! | "Hi, I'm Veri. I can help with Verite Research publications on Sri Lanka's budget, anti-corruption laws, and youth employment." |
+| What gaps exist in Sri Lanka's anti-corruption laws? | Summarises legal gaps in private sector corruption controls and cites *Gaps in the Guardrails (2025)* with page reference. |
+| What does the State of the Budget 2026 say about government revenue? | Summarises revenue projections, tax policy directions, and fiscal implications, citing *State of the Budget 2026 (2026)*. |
+| Can you say more about that? | Expands prior response using conversation history and keeps source grounding. |
+| Who is Virat Kohli? | "That's outside my area..." polite decline and redirect to Verite topics. |
 
 ## Environment Variables
 
-| Variable | Description |
-|---|---|
-| `GROQ_API_KEY` | Your Groq API key (get one at console.groq.com) |
+- `GROQ_API_KEY`: required
 
----
+## Notes
 
-## Tech Stack
-
-| Component | Choice | Why |
-|---|---|---|
-| UI | Streamlit | Pure Python, no JavaScript needed |
-| LLM | Groq `llama-3.3-70b-versatile` | Fast inference, strong instruction-following |
-| Embeddings | `sentence-transformers/all-MiniLM-L6-v2` | Free, runs locally, good quality |
-| Vector DB | ChromaDB | Easy setup, persists to disk |
-| PDF parsing | pypdf | Lightweight, Python-native |
+- Retrieval is FAISS + BM25 (hybrid), not ChromaDB.
+- Upload-from-UI is currently removed for assignment submission flow.
