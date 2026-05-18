@@ -3,10 +3,12 @@ app.py — Verite Research Chatbot UI (rebuilt)
 Run with: streamlit run app.py
 """
 
+import io
 import uuid
 import base64
 import requests
 import streamlit as st
+from PIL import Image
 from chatbot import VeriteChatbot
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -17,10 +19,13 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Load logo from GitHub ─────────────────────────────────────────────────────
+# ── Logo / icon loaders ───────────────────────────────────────────────────────
+COMMIT = "da12781eb151c723490f62acff1b76f218683600"
+RAW    = f"https://raw.githubusercontent.com/nethulinarathota/veriteresearch101/{COMMIT}"
+
 @st.cache_data(show_spinner=False)
-def load_logo():
-    url = "https://raw.githubusercontent.com/nethulinarathota/veriteresearch101/33ec8fd8cf9a8c704ad3543407200341484042db/logo.png"
+def _fetch_b64(url: str) -> str | None:
+    """Fetch a remote file and return its base64 string, or None on failure."""
     try:
         resp = requests.get(url, timeout=5)
         resp.raise_for_status()
@@ -28,10 +33,119 @@ def load_logo():
     except Exception:
         return None
 
-logo_b64 = load_logo()
-logo_img  = f'<img src="data:image/png;base64,{logo_b64}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;" />' if logo_b64 else '<div class="lp-nav-mark">V</div>'
-logo_sidebar = f'<img src="data:image/png;base64,{logo_b64}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0;" />' if logo_b64 else '<div class="veri-logo-mark">V</div>'
-logo_orb  = f'<img src="data:image/png;base64,{logo_b64}" style="width:84px;height:84px;border-radius:50%;object-fit:cover;" />' if logo_b64 else '📚'
+
+@st.cache_data(show_spinner=False)
+def _fetch_inverted_b64(url: str) -> str | None:
+    """
+    Fetch black PNG and convert black → white
+    while keeping transparency.
+    """
+    try:
+        resp = requests.get(url, timeout=5)
+        resp.raise_for_status()
+
+        img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
+
+        r, g, b, a = img.split()
+
+        inverted = Image.merge(
+            "RGBA",
+            (
+                r.point(lambda x: 255 - x),
+                g.point(lambda x: 255 - x),
+                b.point(lambda x: 255 - x),
+                a
+            )
+        )
+
+        buf = io.BytesIO()
+        inverted.save(buf, format="PNG")
+
+        return base64.b64encode(buf.getvalue()).decode()
+
+    except Exception:
+        return None
+
+
+# ── Main Verité logo ──────────────────────────────────────────────────────────
+# This uses your provided Verite logo
+
+logo_b64 = _fetch_b64(
+    f"{RAW}/Logos/Verite%20logo.png"
+)
+
+
+# ── Card icons (black → white automatically) ────────────────────────────────
+
+icon_corruption_b64 = _fetch_inverted_b64(
+    f"{RAW}/Logos/anti-corruption.png"
+)
+
+icon_budget_b64 = _fetch_inverted_b64(
+    f"{RAW}/Logos/calculator.png"
+)
+
+icon_employee_b64 = _fetch_inverted_b64(
+    f"{RAW}/Logos/employee.png"
+)
+
+
+def _img_tag(b64: str | None, style: str, fallback: str = "") -> str:
+    if b64:
+        return f'''
+            <img
+                src="data:image/png;base64,{b64}"
+                style="{style}"
+            />
+        '''
+    return f"<span>{fallback}</span>"
+
+
+# ── Navbar / Sidebar / Orb logos ─────────────────────────────────────────────
+
+logo_img = _img_tag(
+    logo_b64,
+    "width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;",
+    '<div class="lp-nav-mark">V</div>',
+)
+
+logo_sidebar = _img_tag(
+    logo_b64,
+    "width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0;",
+    '<div class="veri-logo-mark">V</div>',
+)
+
+logo_orb = _img_tag(
+    logo_b64,
+    "width:84px;height:84px;border-radius:50%;object-fit:cover;",
+    "📚",
+)
+
+
+# ── Card icons replacing emojis ─────────────────────────────────────────────
+
+icon_corruption = _img_tag(
+    icon_corruption_b64,
+    "width:22px;height:22px;object-fit:contain;",
+    "🛡️"
+)
+
+icon_budget = _img_tag(
+    icon_budget_b64,
+    "width:22px;height:22px;object-fit:contain;",
+    "📊"
+)
+
+icon_employee = _img_tag(
+    icon_employee_b64,
+    "width:22px;height:22px;object-fit:contain;",
+    "👥"
+)
+
+# Card icon helpers — white, no border-radius so the icon shape shows cleanly
+icon_corruption = _img_tag(icon_corruption_b64, "width:22px;height:22px;object-fit:contain;", "🛡️")
+icon_budget     = _img_tag(icon_budget_b64,     "width:22px;height:22px;object-fit:contain;", "📊")
+icon_employee   = _img_tag(icon_employee_b64,   "width:22px;height:22px;object-fit:contain;", "👥")
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -390,7 +504,7 @@ if st.session_state.page == "home":
         <a href="https://www.veriteresearch.org/wp-content/uploads/2025/02/11022025_Gaps_in_the_Guardrails_A_Review_of_Laws_on_Private_Sector_Corruption_in_Sri_Lanka.pdf"
            target="_blank" style="text-decoration:none;">
           <div class="lp-card" id="card-corruption">
-            <div class="lp-card-icon">🛡️</div>
+            <div class="lp-card-icon">{icon_corruption}</div>
             <h3>Anti-corruption</h3>
             <p>Gaps in Sri Lanka's private sector legal framework and international benchmarks.</p>
             <div class="lp-card-arrow">→ Explore</div>
@@ -399,7 +513,7 @@ if st.session_state.page == "home":
         <a href="https://www.veriteresearch.org/wp-content/uploads/2026/02/20260217_VeriteResearch_StateOfTheBudget2026.pdf"
            target="_blank" style="text-decoration:none;">
           <div class="lp-card" id="card-budget">
-            <div class="lp-card-icon">📊</div>
+            <div class="lp-card-icon">{icon_budget}</div>
             <h3>Budget 2026</h3>
             <p>Revenue projections, tax policy changes, and fiscal targets for the year ahead.</p>
             <div class="lp-card-arrow">→ Explore</div>
@@ -408,7 +522,7 @@ if st.session_state.page == "home":
         <a href="https://www.veriteresearch.org/wp-content/uploads/2024/05/VR-Working-Paper_The-Inefficiency-of-Social-Contacts-for-Unemployed-Youth-Working-Paper_June-2020-01.pdf"
            target="_blank" style="text-decoration:none;">
           <div class="lp-card" id="card-youth">
-            <div class="lp-card-icon">👥</div>
+            <div class="lp-card-icon">{icon_employee}</div>
             <h3>Youth employment</h3>
             <p>Why social contacts fail unemployed youth and what actually works instead.</p>
             <div class="lp-card-arrow">→ Explore</div>
